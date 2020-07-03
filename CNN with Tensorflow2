@@ -1,0 +1,122 @@
+from absl import flags,app
+from random import shuffle, random
+from model import *
+
+import tensorflow as tf
+import numpy as np
+import sys
+
+################################################################################################################
+flags.DEFINE_string("img_path", "D:/Mnist/train/", "Training image path")
+
+flags.DEFINE_string("txt_path", "D:/Mnist/train.txt", "Training text path")
+
+flags.DEFINE_integer("img_size", 28, "Training image size (height and width)")
+
+flags.DEFINE_integer("batch_size",5, "Training batch size")
+
+flags.DEFINE_integer("num_classes", 50, "Number of classes")
+
+flags.DEFINE_integer("epochs", 50, "Training total epochs")
+
+flags.DEFINE_bool("train", True, "Train - True, Test - False")
+
+flags.DEFINE_float("lr", 0.001, "Learning rate")
+
+flags.DEFINE_string("save_checkpoint", "D:/tensorflor2.0(New_age_estimation)/checkpoint", "")
+
+FLAGS = flags.FLAGS
+FLAGS(sys.argv)
+################################################################################################################
+
+################################################################################################################
+#import easydict
+#FLAGS = easydict.EasyDict({        // 주피터 사용자
+
+#})
+################################################################################################################
+
+optimizer = tf.keras.optimizers.Adam(FLAGS.lr)
+
+def train_func(img_list, lab_list):
+    img = tf.io.read_file(img_list)
+    img = tf.image.decode_png(img, 1)
+    img = tf.image.resize(img, [FLAGS.img_size, FLAGS.img_size])
+
+    if random() > 0.5:
+        img = tf.image.flip_left_right(img)
+
+    img = tf.image.per_image_standardization(img)
+
+    label = tf.one_hot(lab_list, FLAGS.num_classes)
+
+    return img, label
+
+@tf.function
+def run(model, batch_images, training=True):
+    logits = model(batch_images, training=training)
+    return logits
+
+def train_loss(model, batch_images, batch_labels):
+    with tf.GradientTape() as tape:
+        logits = run(model, batch_images, True)
+        loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)(batch_labels, logits)
+
+    gradient = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(gradient, model.trainable_variables))
+
+    return loss
+
+def main(argv=None):
+
+    # Define model
+    model = pratice_model(input_shape=(FLAGS.img_size, FLAGS.img_size, 1), num_classes=FLAGS.num_classes, weight_decay=0.00001)
+    model.summary()
+
+    # input data generation
+    train_img = np.loadtxt(FLAGS.txt_path, dtype="<U100", skiprows=0, usecols=0)
+    train_img = [FLAGS.img_path + img for img in train_img]
+    train_lab = np.loadtxt(FLAGS.txt_path, dtype=np.int32, skiprows=0, usecols=1)
+
+    if FLAGS.train is True:
+        count = 0
+
+        for ep in range(FLAGS.epochs):
+            A = list(zip(train_img, train_lab))
+            shuffle(A)
+            train_img, train_lab = zip(*A)
+
+            train_img, train_lab = np.array(train_img), np.array(train_lab)
+    
+            train_gener = tf.data.Dataset.from_tensor_slices((train_img, train_lab))
+            train_gener = train_gener.shuffle(len(train_lab))
+            train_gener = train_gener.map(train_func)
+            train_gener = train_gener.batch(FLAGS.batch_size)
+            train_gener = train_gener.prefetch(tf.data.experimental.AUTOTUNE)
+
+            train_iter = iter(train_gener)
+            train_idx = len(train_lab) // FLAGS.batch_size
+            for step in range(train_idx):
+                batch_images, batch_labels = next(train_iter)
+
+                # Calculate the loss
+                total_loss = train_loss(model, batch_images, batch_labels)
+
+                if count % 10 == 0:
+                    print("================================")
+                    print("Epoch: {} [{}/{}] Loss = {}".format(ep, step + 1, train_idx, total_loss))
+                    print("================================")
+            
+                if count % 500 == 0:
+                    ckpt = tf.train.Checkpoint(model=model, optimizer=optimizer)
+                    ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.save_checkpoint + "/" + "pratice_model_{}.ckpt".format(count), 5)
+                    ckpt_manager.save()
+
+
+                count += 1    
+    else:
+        test()
+
+if __name__ == "__main__":
+    app.run(main)
+
