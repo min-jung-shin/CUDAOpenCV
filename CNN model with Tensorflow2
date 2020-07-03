@@ -1,0 +1,32 @@
+# -*- coding: utf-8 -*-
+import tensorflow as tf
+
+
+def pratice_model(input_shape=(28, 28, 1), num_classes=10, weight_decay=0.00001):
+
+    h = inputs = tf.keras.Input(input_shape)
+    
+    # padding --> same: ???Ը??? ?????? ?־? ?е??? ?Ȼ???, valid: no padding
+    h = tf.keras.layers.Conv2D(filters=16,
+                               kernel_size=3,
+                               strides=2,
+                               padding='same',
+                               use_bias=False,
+                               kernel_regularizer=tf.keras.regularizers.l2(weight_decay))(h)    # batch size x 14 x 14 x 16
+    h = tf.keras.layers.BatchNormalization()(h)     # batch size x 14 x 14 x 16
+    h = tf.keras.layers.ReLU()(h)                   # batch size x 14 x 14 x 16
+
+    h = tf.keras.layers.Conv2D(filters=32,
+                               kernel_size=3,
+                               strides=2,
+                               padding='same',
+                               use_bias=False,
+                               kernel_regularizer=tf.keras.regularizers.l2(weight_decay))(h)     # batch size x 7 x 7 x 32
+    h = tf.keras.layers.BatchNormalization()(h)
+    h = tf.keras.layers.ReLU()(h)       # batch size x 7 x 7 x 32
+
+    h = tf.keras.layers.GlobalAveragePooling2D()(h)     # Batch size x 32
+        
+    h = tf.keras.layers.Dense(num_classes)(h)           # Batch size x num_classes
+    
+    return tf.keras.Model(inputs=inputs, outputs=h)
