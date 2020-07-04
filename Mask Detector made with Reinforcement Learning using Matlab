@@ -1,0 +1,398 @@
+clear all, clc
+a=imread("KakaoTalk_20200616_193913999.jpg");
+b=imread("KakaoTalk_20200616_193915336.jpg");
+c=imread("KakaoTalk_20200616_193915767.jpg");
+d=imread("KakaoTalk_20200616_193916164.jpg");
+e=imread("KakaoTalk_20200616_193916699.jpg");
+num1=1;
+num2=2;
+num3=3;
+num4=4;
+num5=5;
+
+mkdir AI_HW/Gogglenet/mask
+mkdir AI_HW/Gogglenet/face
+mkdir AI_HW/Alexnet/mask
+mkdir AI_HW/Alexnet/face
+
+a1=imresize(a, [224,224]);
+b1=imresize(b, [224,224]);
+c1=imresize(c, [224,224]);
+d1=imresize(d, [224,224]);
+e1=imresize(e, [224,224]);
+imwrite(a1,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num1),'.jpg']);
+imwrite(b1,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num2),'.jpg']);
+imwrite(c1,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/face/',num2str(num3),'.jpg']);
+imwrite(d1,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num4),'.jpg']);
+imwrite(e1,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num5),'.jpg']);
+
+a2= imrotate(a1,30,'crop');
+b2= imrotate(b1,30,'crop');
+c2= imrotate(c1,30,'crop');
+d2= imrotate(d1,30,'crop');
+e2= imrotate(e1,30,'crop');
+imwrite(a2,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num1),'_rotate.jpg']);
+imwrite(b2,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num2),'_rotate.jpg']);
+imwrite(c2,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/face/',num2str(num3),'_rotate.jpg']);
+imwrite(d2,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num4),'_rotate.jpg']);
+imwrite(e2,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num5),'_rotate.jpg']);
+
+a3=imtranslate(a1,[15,25]);
+b3=imtranslate(b1,[15,25]);
+c3=imtranslate(c1,[15,25]);
+d3=imtranslate(d1,[15,25]);
+e3=imtranslate(e1,[15,25]);
+imwrite(a3,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num1),'_translate.jpg']);
+imwrite(b3,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num2),'_translate.jpg']);
+imwrite(c3,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/face/',num2str(num3),'_translate.jpg']);
+imwrite(d3,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num4),'_translate.jpg']);
+imwrite(e3,['C:/Users/hse03/Desktop/AI_HW/Gogglenet/mask/',num2str(num5),'_translate.jpg']);
+
+%Googlenet생성
+net = googlenet;
+analyzeNetwork(net);
+inputSize = net.Layers(1).InputSize;
+
+%이미지 데이터 경로저장 및 폴더의 이름별로 라벨을 나누고 이미지셋과 검증셋을ㄹ 7:3으로 설정
+imds = imageDatastore('C:/Users/hse03/Desktop/AI_HW/Gogglenet','IncludeSubfolders',true,'LabelSource','foldernames')
+[imdsTrain,imdsValidation] = splitEachLabel(imds,0.7,'randomized');
+
+%이미지 학습셋 데이터 임의로 10개 불러오기
+numTrainImages = numel(imdsTrain.Labels); %numel function=행렬안에 요소 갯수를 세는 것
+idx = randperm(numTrainImages,10);
+figure
+for i = 1:10
+    subplot(2,5,i)
+    I = readimage(imdsTrain,idx(i));
+    imshow(I)
+end
+
+% 훈련된 네트워크에서 계층 그래프를 추출
+%네트워크가 AlexNet, VGG-16 또는 VGG-19와 같은 SeriesNetwork 객체라면
+% net.Layers의 계층 목록을 계층 그래프로 변환
+if isa(net,'SeriesNetwork') 
+  lgraph= layerGraph(net.Layers); 
+else
+  lgraph = layerGraph(net);
+end
+
+% 학습 layer와 class layer설정
+learnableLayer = lgraph.Layers(end-2);
+classLayer = lgraph.Layers(end);
+
+numClasses = numel(categories(imdsTrain.Labels)); %출력값의 개수가 새 데이터 세트의 클래스 개수와 같은
+                                                   % (이 예제에서는 10) 새로운 FC으로
+                                                   % 바꾼다
+                                                   
+newLearnableLayer = fullyConnectedLayer(numClasses, ... %바꿔줄 layer를 FC로설정하고 학습률 및 bias등을 설정
+    'Name','new_fc', ...
+    'WeightLearnRateFactor',10, ...
+    'BiasLearnRateFactor',10);   
+
+lgraph = replaceLayer(lgraph,learnableLayer.Name,newLearnableLayer); % lgraph의 기존 학습layer을 newLearnableLayer
+                                                                    % 로 바꿔주고 그래프로띄움 
+                                                                    
+newClassLayer = classificationLayer('Name','new_classoutput'); %분류layer를 newclasslayer로 설정
+lgraph = replaceLayer(lgraph,classLayer.Name,newClassLayer);                                                                    
+
+figure('Units','normalized','Position',[0.3 0.3 0.4 0.4]);
+plot(lgraph)
+ylim([0,10])                    %새로 전이시킨 layer를 새로 띄움
+
+miniBatchSize = 10;
+valFrequency = floor(numel(imdsTrain.Files)/miniBatchSize);
+options = trainingOptions('sgdm', ...
+    'MiniBatchSize',miniBatchSize, ...
+    'MaxEpochs',6, ...
+    'InitialLearnRate',3e-4, ...
+    'Shuffle','every-epoch', ...
+    'ValidationData',imdsValidation, ...
+    'ValidationFrequency',valFrequency, ...
+    'Verbose',false, ...
+    'Plots','training-progress'); %option을 두어 여러 학습파라미터 설정
+    
+    mynet = trainNetwork(imdsTrain,lgraph,options) %imdsTrain을 가지고 전이학습 진행
+    save mynet.mat mynet    %학습됀거 저장
+    
+    
+% load mynet.mat mynet
+
+[YPred,probs] = classify(mynet,imdsValidation); %Validationset으로 진행하여 도출
+accuracy = mean(YPred == imdsValidation.Labels) 
+
+idx = randperm(numel(imdsValidation.Files),4); %validation 파일을 임의로 띄워서
+                                               %예측index를 label로 설정하여 
+                                               % 사진제목으로 씀
+figure
+for i = 1:4
+    subplot(2,2,i)
+    I = readimage(imdsValidation,idx(i));
+    imshow(I)
+    label = YPred(idx(i));
+    title(string(label) + ", " + num2str(100*max(probs(idx(i),:)),3) + "%");
+end
+
+test1 = imread('test_image1.jpg');
+testing1=imresize(test1,[224,224]);
+[label, scores] = classify(mynet,testing1);
+figure, imshow(testing1), title(label)
+
+test2 = imread('test_image2.jpg');
+testing2=imresize(test2,[224,224]);
+[label, scores] = classify(mynet,testing2);
+figure, imshow(testing2), title(label)
+
+test3 = imread('test_image3.jpg');
+testing3=imresize(test3,[224,224]);
+[label, scores] = classify(mynet,testing3);
+figure, imshow(testing3), title(label)
+
+test4 = imread('test_image4.jpg');
+testing4=imresize(test4,[224,224]);
+[label, scores] = classify(mynet,testing4);
+figure, imshow(testing4), title(label)
+
+%Alexnet의 시작
+net2 = alexnet;
+analyzeNetwork(net2);
+inputSize2 = net2.Layers(1).InputSize;
+
+mkdir AI_HW//Alexnet//Mask
+mkdir AI_HW//Alexnet//Face
+
+a1=imresize(a, [227,227]);
+b1=imresize(b, [227,227]);
+c1=imresize(c, [227,227]);
+d1=imresize(d, [227,227]);
+e1=imresize(e, [227,227]);
+imwrite(a1,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num1),'.jpg']);
+imwrite(b1,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num2),'.jpg']);
+imwrite(c1,['C:/Users/hse03/Desktop/AI_HW/Alexnet/face/',num2str(num3),'.jpg']);
+imwrite(d1,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num4),'.jpg']);
+imwrite(e1,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num5),'.jpg']);
+
+a2= imrotate(a1,30,'crop');
+b2= imrotate(b1,30,'crop');
+c2= imrotate(c1,30,'crop');
+d2= imrotate(d1,30,'crop');
+e2= imrotate(e1,30,'crop');
+imwrite(a2,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num1),'_rotate.jpg']);
+imwrite(b2,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num2),'_rotate.jpg']);
+imwrite(c2,['C:/Users/hse03/Desktop/AI_HW/Alexnet/face/',num2str(num3),'_rotate.jpg']);
+imwrite(d2,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num4),'_rotate.jpg']);
+imwrite(e2,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num5),'_rotate.jpg']);
+
+a3=imtranslate(a1,[15,25]);
+b3=imtranslate(b1,[15,25]);
+c3=imtranslate(c1,[15,25]);
+d3=imtranslate(d1,[15,25]);
+e3=imtranslate(e1,[15,25]);
+imwrite(a3,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num1),'_translate.jpg']);
+imwrite(b3,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num2),'_translate.jpg']);
+imwrite(c3,['C:/Users/hse03/Desktop/AI_HW/Alexnet/face/',num2str(num3),'_translate.jpg']);
+imwrite(d3,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num4),'_translate.jpg']);
+imwrite(e3,['C:/Users/hse03/Desktop/AI_HW/Alexnet/mask/',num2str(num5),'_translate.jpg']);
+
+imds2 = imageDatastore('C:/Users/hse03/Desktop/AI_HW/Alexnet','IncludeSubfolders',true,'LabelSource','foldernames')
+[imdsTrain2,imdsValidation2] = splitEachLabel(imds2,0.7,'randomized');
+
+if isa(net2,'SeriesNetwork') 
+  lgraph2 = layerGraph(net2.Layers); 
+else
+  lgraph2 = layerGraph(net2);
+end
+
+learnableLayer2 = lgraph2.Layers(end-2);
+classLayer2 = lgraph2.Layers(end);
+
+numClasses2 = numel(categories(imdsTrain2.Labels)); 
+                                                   
+                                                  
+newLearnableLayer2 = fullyConnectedLayer(numClasses, ... 
+    'Name','new_fc', ...
+    'WeightLearnRateFactor',10, ...
+    'BiasLearnRateFactor',10);   
+
+lgraph2 = replaceLayer(lgraph2,learnableLayer2.Name,newLearnableLayer2); 
+
+newClassLayer2 = classificationLayer('Name','new_classoutput'); %분류layer를 newclasslayer로 설정
+lgraph2 = replaceLayer(lgraph2,classLayer2.Name,newClassLayer2);
+
+figure('Units','normalized','Position',[0.3 0.3 0.4 0.4]);
+plot(lgraph2)
+ylim([0,10])     
+
+miniBatchSize2 = 10;
+valFrequency2 = floor(numel(imdsTrain2.Files)/miniBatchSize2);
+options2 = trainingOptions('sgdm', ...
+    'MiniBatchSize',miniBatchSize2, ...
+    'MaxEpochs',6, ...
+    'InitialLearnRate',3e-4, ...
+    'Shuffle','every-epoch', ...
+    'ValidationData',imdsValidation2, ...
+    'ValidationFrequency',valFrequency2, ...
+    'Verbose',false, ...
+    'Plots','training-progress'); %option을 두어 여러 학습파라미터 설정
+    
+mynet2 = trainNetwork(imdsTrain2,lgraph2,options2) %imdsTrain을 가지고 전이학습 진행
+save mynet2.mat mynet2 
+
+[YPred2,probs2] = classify(mynet2,imdsValidation2); %Validationset으로 진행하여 도출
+accuracy2 = mean(YPred2 == imdsValidation2.Labels) 
+
+
+idx2 = randperm(numel(imdsValidation2.Files),4); %validation 파일을 임의로 띄워서
+                                               %예측index를 label로 설정하여 
+                                               % 사진제목으로 씀
+figure
+for i = 1:4
+    subplot(2,2,i)
+    I2 = readimage(imdsValidation2,idx2(i));
+    imshow(I2)
+    label2 = YPred2(idx2(i));
+    title(string(label2) + ", " + num2str(100*max(probs2(idx2(i),:)),3) + "%");
+end    
+
+test1_2 = imread('test_image1.jpg');
+testing1_2=imresize(test1_2,[227,227]);
+[label, scores] = classify(mynet2,testing1_2);
+figure, imshow(testing1_2), title(label)
+
+test2_2 = imread('test_image2.jpg');
+testing2_2=imresize(test2_2,[227,227]);
+[label, scores] = classify(mynet2,testing2_2);
+figure, imshow(testing2_2), title(label)
+
+test3_2 = imread('test_image3.jpg');
+testing3_2=imresize(test3_2,[227,227]);
+[label, scores] = classify(mynet2,testing3_2);
+figure, imshow(testing3_2), title(label)
+
+test4_2 = imread('test_image4.jpg');
+testing4_2=imresize(test4_2,[227,227]);
+[label, scores] = classify(mynet2,testing4_2);
+figure, imshow(testing4_2), title(label)
+
+
+%ResNet의 시작
+net3 = resnet50;
+analyzeNetwork(net3);
+inputSize3 = net3.Layers(1).InputSize;
+
+mkdir AI_HW//Resnet50//mask
+mkdir AI_HW//Resnet50//face
+
+a1=imresize(a, [224,224]);
+b1=imresize(b, [224,224]);
+c1=imresize(c, [224,224]);
+d1=imresize(d, [224,224]);
+e1=imresize(e, [224,224]);
+imwrite(a1,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num1),'.jpg']);
+imwrite(b1,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num2),'.jpg']);
+imwrite(c1,['C:/Users/hse03/Desktop/AI_HW/Resnet50/face/',num2str(num3),'.jpg']);
+imwrite(d1,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num4),'.jpg']);
+imwrite(e1,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num5),'.jpg']);
+
+a2= imrotate(a1,30,'crop');
+b2= imrotate(b1,30,'crop');
+c2= imrotate(c1,30,'crop');
+d2= imrotate(d1,30,'crop');
+e2= imrotate(e1,30,'crop');
+imwrite(a2,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num1),'_rotate.jpg']);
+imwrite(b2,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num2),'_rotate.jpg']);
+imwrite(c2,['C:/Users/hse03/Desktop/AI_HW/Resnet50/face/',num2str(num3),'_rotate.jpg']);
+imwrite(d2,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num4),'_rotate.jpg']);
+imwrite(e2,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num5),'_rotate.jpg']);
+
+a3=imtranslate(a1,[15,25]);
+b3=imtranslate(b1,[15,25]);
+c3=imtranslate(c1,[15,25]);
+d3=imtranslate(d1,[15,25]);
+e3=imtranslate(e1,[15,25]);
+imwrite(a3,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num1),'_translate.jpg']);
+imwrite(b3,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num2),'_translate.jpg']);
+imwrite(c3,['C:/Users/hse03/Desktop/AI_HW/Resnet50/face/',num2str(num3),'_translate.jpg']);
+imwrite(d3,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num4),'_translate.jpg']);
+imwrite(e3,['C:/Users/hse03/Desktop/AI_HW/Resnet50/mask/',num2str(num5),'_translate.jpg']);
+
+imds3 = imageDatastore('C:/Users/hse03/Desktop/AI_HW/Resnet50','IncludeSubfolders',true,'LabelSource','foldernames')
+[imdsTrain3,imdsValidation3] = splitEachLabel(imds3,0.7,'randomized');
+
+if isa(net3,'SeriesNetwork') 
+  lgraph3 = layerGraph(net3.Layers); 
+else
+  lgraph3 = layerGraph(net3);
+end
+
+learnableLayer3 = lgraph3.Layers(end-2);
+classLayer3 = lgraph3.Layers(end);
+
+numClasses3 = numel(categories(imdsTrain3.Labels)); 
+                                                   
+                                                  
+newLearnableLayer3 = fullyConnectedLayer(numClasses, ... 
+    'Name','new_fc', ...
+    'WeightLearnRateFactor',10, ...
+    'BiasLearnRateFactor',10);   
+
+lgraph3 = replaceLayer(lgraph3,learnableLayer3.Name,newLearnableLayer3); 
+
+newClassLayer3 = classificationLayer('Name','new_classoutput'); %분류layer를 newclasslayer로 설정
+lgraph3 = replaceLayer(lgraph3,classLayer3.Name,newClassLayer3);
+
+figure('Units','normalized','Position',[0.3 0.3 0.4 0.4]);
+plot(lgraph3)
+ylim([0,10])     
+
+
+miniBatchSize3 = 10;
+valFrequency3 = floor(numel(imdsTrain3.Files)/miniBatchSize3);
+options3 = trainingOptions('sgdm', ...
+    'MiniBatchSize',miniBatchSize3, ...
+    'MaxEpochs',6, ...
+    'InitialLearnRate',3e-4, ...
+    'Shuffle','every-epoch', ...
+    'ValidationData',imdsValidation3, ...
+    'ValidationFrequency',valFrequency3, ...
+    'Verbose',false, ...
+    'Plots','training-progress'); %option을 두어 여러 학습파라미터 설정
+
+
+mynet3 = trainNetwork(imdsTrain3,lgraph3,options3) %imdsTrain을 가지고 전이학습 진행
+save mynet3.mat mynet3
+
+[YPred3,probs3] = classify(mynet3,imdsValidation3); %Validationset으로 진행하여 도출
+accuracy3 = mean(YPred3 == imdsValidation3.Labels) 
+
+
+idx3 = randperm(numel(imdsValidation3.Files),4); %validation 파일을 임의로 띄워서
+                                               %예측index를 label로 설정하여 
+                                               % 사진제목으로 씀
+figure
+for i = 1:4
+    subplot(2,2,i)
+    I3 = readimage(imdsValidation3,idx3(i));
+    imshow(I3)
+    label3 = YPred3(idx3(i));
+    title(string(label3) + ", " + num2str(100*max(probs3(idx3(i),:)),3) + "%");
+end
+
+test1_3 = imread('test_image1.jpg');
+testing1_3=imresize(test1_3,[224,224]);
+[label, scores] = classify(mynet3,testing1_3);
+figure, imshow(testing1_3), title(label)
+
+test2_3 = imread('test_image2.jpg');
+testing2_3=imresize(test2_3,[224,224]);
+[label, scores] = classify(mynet3,testing2_3);
+figure, imshow(testing2_3), title(label)
+
+test3_3 = imread('test_image3.jpg');
+testing3_3=imresize(test3_3,[224,224]);
+[label, scores] = classify(mynet3,testing3_3);
+figure, imshow(testing3_3), title(label)
+
+test4_3 = imread('test_image4.jpg');
+testing4_3=imresize(test4_3,[224,224]);
+[label, scores] = classify(mynet3,testing4_3);
+figure, imshow(testing4_3), title(label)
