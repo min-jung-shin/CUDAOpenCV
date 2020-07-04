@@ -1,0 +1,58 @@
+
+#include <iostream>
+using namespace std
+
+int main() 
+{
+	ifstream inStream; 
+	ofstream outStream; 
+	char next; 
+	unsigned char rawFile[512][512]; 
+	unsigned char padding3[514][514]; 
+	unsigned char padding5[516][516];
+	inStream.open("lena.raw"); 
+	outStream.open("result.raw");
+	inStream.seekg(0, ios::beg); 
+	for (int i = 0; i < 512; i++) { 
+		for (int j = 0; j < 512; j++) { 
+			inStream.get(next); rawFile[i][j] = next; 
+		} 
+	}
+	for (int a = 1; a <= 5; a++) {
+		for (int i = 0; i < 512; i++) { 
+			for (int j = 0; j < 512; j++) { 
+				padding5[i][j] = rawFile[i - 2][j - 2]; 
+			} 
+		} 
+		for (int i = 0; i < 516; i++) {
+			padding5[i][0] = padding5[i][4]; 
+			padding5[i][1] = padding5[i][3]; 
+			padding5[i][515] = padding5[i][511]; 
+			padding5[i][514] = padding5[i][512]; 
+		} 
+		for (int i = 0; i < 516; i++) {
+			padding5[0][i] = padding5[4][i];
+			padding5[1][i] = padding5[3][i]; 
+			padding5[515][i] = padding5[511][i]; 
+			padding5[514][i] = padding5[512][i];
+		}
+		for (int i = 0; i < 512; i++) { 
+			for (int j = 0; j < 512; j++) { 
+				rawFile[i][j] = (padding5[i - 2][j - 2] + padding5[i - 2][j - 1] 
+					+ padding5[i - 2][j] + padding5[i - 2][j + 1] + padding5[i - 2][j + 2] + padding5[i - 1][j - 2] + 
+					padding5[i - 1][j - 1] +padding5[i - 1][j] + padding5[i - 1][j + 1] + padding5[i - 1][j + 2] + 
+					padding5[i][j - 2] + padding5[i][j - 1] + padding5[i][j] +padding5[i][j + 1] + padding5[i][j + 2] +
+					padding5[i + 1][j - 2] + padding5[i + 1][j - 1] + padding5[i + 1][j] + padding5[i + 1][j + 1] + 
+					padding5[i + 1][j + 2] + padding5[i + 2][j - 2] + padding5[i + 2][j - 1] + padding5[i + 2][j] +
+					padding5[i + 2][j + 1] + padding5[i + 2][j + 2]) / 25; 
+			} 
+		}
+	}
+	for (int i = 0; i < 512; i++) { 
+		for (int j = 0; j < 512; j++) { 
+			outStream << rawFile[i][j]; 
+		}
+	} 
+	inStream.close(); outStream.close();
+	return 0;
+}
