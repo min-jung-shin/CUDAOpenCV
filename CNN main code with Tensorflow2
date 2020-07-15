@@ -1,93 +1,130 @@
-from absl import flags,app
 from random import shuffle, random
-from model import *
-
+from model.model import *
 import tensorflow as tf
+import matplotlib.pyplot as plt
 import numpy as np
 import sys
 
 ################################################################################################################
-flags.DEFINE_string("img_path", "D:/Mnist/train/", "Training image path")
 
-flags.DEFINE_string("txt_path", "D:/Mnist/train.txt", "Training text path")
+################################################################################################################ 
 
-flags.DEFINE_integer("img_size", 28, "Training image size (height and width)")
 
-flags.DEFINE_integer("batch_size",5, "Training batch size")
+################################################################################################################ 
+import easydict
+FLAGS = easydict.EasyDict({
+    "img_path": "/content/train/",
+    "txt_path": "/content/train/train.txt",
+    "test_img_path":"/content/test/",
+    "test_txt_path":"/content/test/test.txt",
+    "img_size": 28,
+    "batch_size": 100,
+    "num_classes": 10,
+    "epochs": 1000,
+    "train": True,
+    "lr": 0.001,
+    "save_checkpoint": "/content/drive/My Drive/Cifar_CNN/checkpoint",
+    "pre_checkpoint": True ,
+    "pre_checkpoint_path": "/content/drive/My Drive/Cifar_CNN/precheckpoint"
 
-flags.DEFINE_integer("num_classes", 50, "Number of classes")
-
-flags.DEFINE_integer("epochs", 50, "Training total epochs")
-
-flags.DEFINE_bool("train", True, "Train - True, Test - False")
-
-flags.DEFINE_float("lr", 0.001, "Learning rate")
-
-flags.DEFINE_string("save_checkpoint", "D:/tensorflor2.0(New_age_estimation)/checkpoint", "")
-
-FLAGS = flags.FLAGS
-FLAGS(sys.argv)
-################################################################################################################
-
-################################################################################################################
-#import easydict
-#FLAGS = easydict.EasyDict({        // 주피터 사용자
-
-#})
+})
 ################################################################################################################
 
 optimizer = tf.keras.optimizers.Adam(FLAGS.lr)
 
 def train_func(img_list, lab_list):
+    
     img = tf.io.read_file(img_list)
     img = tf.image.decode_png(img, 1)
-    img = tf.image.resize(img, [FLAGS.img_size, FLAGS.img_size])
+    img = tf.image.resize(img, [FLAGS.img_size, FLAGS.img_size])        # 전처리단계
 
     if random() > 0.5:
         img = tf.image.flip_left_right(img)
-
     img = tf.image.per_image_standardization(img)
 
-    label = tf.one_hot(lab_list, FLAGS.num_classes)
+    lab = tf.one_hot(lab_list, FLAGS.num_classes)
 
-    return img, label
+    return img, lab
+
+def test_func(img_list, lab_list):
+
+    img = tf.io.read_file(img_list)
+    img = tf.image.decode_png(img, 1)
+    img = tf.image.resize(img, [FLAGS.img_size, FLAGS.img_size])        # 전처리단계
+    img = tf.image.per_image_standardization(img)
+
+    lab =lab_list
+
+    return img, lab 
 
 @tf.function
-def run(model, batch_images, training=True):
-    logits = model(batch_images, training=training)
-    return logits
+def run_model(model, images, training=True):
+    return model(images, training=training)
 
-def train_loss(model, batch_images, batch_labels):
+def train_loss(model, images, labels):
     with tf.GradientTape() as tape:
-        logits = run(model, batch_images, True)
-        loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)(batch_labels, logits)
-
-    gradient = tape.gradient(loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(gradient, model.trainable_variables))
+        logits = run_model(model, images, True)
+        loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)(labels, logits)
+        
+    gradients = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
     return loss
 
-def main(argv=None):
+def cal_acc(model, images, labels):     # 성능 체크하는 부분
+    logits = run_model(model, images, False)        # [batch_size, 10]
+    logits = tf.nn.softmax(logits, 1)               # [batch_size, 10]
+    predict = tf.argmax(logits, 1)     # [batch_size]
+    predict = tf.cast(predict, tf.int32)
+
+    True_val = tf.equal(labels, predict)
+    True_val = tf.cast(True_val, tf.float32)
+    True_val = tf.reduce_sum(True_val)
+
+    return True_val
+
+def main():
 
     # Define model
     model = pratice_model(input_shape=(FLAGS.img_size, FLAGS.img_size, 1), num_classes=FLAGS.num_classes, weight_decay=0.00001)
     model.summary()
 
-    # input data generation
-    train_img = np.loadtxt(FLAGS.txt_path, dtype="<U100", skiprows=0, usecols=0)
-    train_img = [FLAGS.img_path + img for img in train_img]
-    train_lab = np.loadtxt(FLAGS.txt_path, dtype=np.int32, skiprows=0, usecols=1)
+    if FLAGS.pre_checkpoint is True:
+        ckpt = tf.train.Checkpoint(model=model, optimizer=optimizer)
+        ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.pre_checkpoint_path, 5)
+
+        if ckpt_manager.latest_checkpoint:
+            ckpt.restore(ckpt_manager.latest_checkpoint)
+            print("============================")
+            print("* weight 불러오기 성공!!!!! *")
+            print("============================")
 
     if FLAGS.train is True:
-        count = 0
+        # input data generation
+        train_img = np.loadtxt(FLAGS.txt_path, dtype="<U100", skiprows=0, usecols=0)
+        train_img = [FLAGS.img_path + img for img in train_img]
+        train_lab = np.loadtxt(FLAGS.txt_path, dtype=np.int32, skiprows=0, usecols=1)
 
+        # test data generation
+        test_img = np.loadtxt(FLAGS.test_txt_path, dtype="<U100", skiprows=0, usecols=0)
+        test_img = [FLAGS.test_img_path + img for img in test_img]
+        test_lab = np.loadtxt(FLAGS.test_txt_path, dtype=np.int32, skiprows=0, usecols=1)
+
+        test_gener = tf.data.Dataset.from_tensor_slices((test_img, test_lab))
+        test_gener = test_gener.map(test_func)
+        test_gener = test_gener.batch(128)
+        test_gener = test_gener.prefetch(tf.data.experimental.AUTOTUNE)
+
+        test_idx = len(test_lab) // 128
+
+        count = 0
         for ep in range(FLAGS.epochs):
+            # image shuffle in train set
             A = list(zip(train_img, train_lab))
             shuffle(A)
             train_img, train_lab = zip(*A)
-
             train_img, train_lab = np.array(train_img), np.array(train_lab)
-    
+
             train_gener = tf.data.Dataset.from_tensor_slices((train_img, train_lab))
             train_gener = train_gener.shuffle(len(train_lab))
             train_gener = train_gener.map(train_func)
@@ -97,26 +134,77 @@ def main(argv=None):
             train_iter = iter(train_gener)
             train_idx = len(train_lab) // FLAGS.batch_size
             for step in range(train_idx):
-                batch_images, batch_labels = next(train_iter)
+                # Extract the real inputs
+                batch_imgs, batch_labs = next(train_iter)
 
-                # Calculate the loss
-                total_loss = train_loss(model, batch_images, batch_labels)
+                # Calcualate the loss
+                loss = train_loss(model, batch_imgs, batch_labs)
+                loss = float("{0:.4f}".format(loss))
+                L = int(round(50 * step / float(train_idx - 1)))
+                bar = ">" * L + "-" * (50 - L)
 
                 if count % 10 == 0:
-                    print("================================")
-                    print("Epoch: {} [{}/{}] Loss = {}".format(ep, step + 1, train_idx, total_loss))
-                    print("================================")
-            
-                if count % 500 == 0:
+                    #print("Epoch: {} [{}/{}] loss = {}".format(ep, step + 1, train_idx, loss))
+                    print("Epoch: {}, step: |{}| {}, loss = {}".format(ep, bar, step + 1, loss))
+
+                if (count + 1) % test_idx == 0:
+                    acc = 0
+                    test_iter = iter(test_gener)
+                    for i in range(test_idx):
+                        test_imgs, test_labs = next(test_iter)
+                        acc += cal_acc(model, test_imgs, test_labs)
+                    accuracy = 100.*(acc / len(test_lab))
+                    accuracy = float("{0:.2f}".format(accuracy))
+                    print("================")
+                    print("Accuracy = {} %".format(accuracy))
+                    print("================")
+
+                # Save the checkpoint
+                if count % 1000 == 0:
                     ckpt = tf.train.Checkpoint(model=model, optimizer=optimizer)
-                    ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.save_checkpoint + "/" + "pratice_model_{}.ckpt".format(count), 5)
+                    ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.save_checkpoint + "/" + "Mnist_model_{}".format(count), 5)
                     ckpt_manager.save()
+                
 
-
-                count += 1    
+                count += 1
+  
     else:
-        test()
+        # test data generation
+        test_img = np.loadtxt(FLAGS.test_txt_path, dtype="<U100", skiprows=0, usecols=0)
+        test_img = [FLAGS.test_img_path + img for img in test_img]
+        test_lab = np.loadtxt(FLAGS.test_txt_path, dtype=np.int32, skiprows=0, usecols=1)
+
+        test_gener = tf.data.Dataset.from_tensor_slices((test_img, test_lab))
+        test_gener = test_gener.map(test_func)
+        test_gener = test_gener.batch(1)
+        test_gener = test_gener.prefetch(tf.data.experimental.AUTOTUNE)
+
+        test_idx = len(test_lab) // 1
+        test_iter = iter(test_gener)
+        for i in range(test_idx):
+            test_imgs, test_labs = next(test_iter)          # [1]
+
+            logits = model(test_imgs, training=False)       # [1, 10]
+            logits = tf.nn.softmax(logits, 1)               # [1, 10]
+            predict = tf.argmax(logits, 1)     # [1]        ==> [value], predict[0] ==> value
+            predict = tf.cast(predict, tf.int32)
+            
+            if predict[0] == test_labs[0]:
+                print("===============================")
+                print("정답: {}, 일치한다!".format(test_labs[0]))
+                print("숫자 0: {} %".format(logits[0][0] * 100.))
+                print("숫자 1: {} %".format(logits[0][1] * 100.))
+                print("숫자 2: {} %".format(logits[0][2] * 100.))
+                print("숫자 3: {} %".format(logits[0][3] * 100.))
+                print("숫자 4: {} %".format(logits[0][4] * 100.))
+                print("숫자 5: {} %".format(logits[0][5] * 100.))
+                print("숫자 6: {} %".format(logits[0][6] * 100.))
+                print("숫자 7: {} %".format(logits[0][7] * 100.))
+                print("숫자 8: {} %".format(logits[0][8] * 100.))
+                print("숫자 9: {} %".format(logits[0][9] * 100.))
+                print("===============================")
+                cv2.imshow("성공!!!", test_imgs[0].numpy())
+                cv2.waitKey(0)
 
 if __name__ == "__main__":
-    app.run(main)
-
+    main()
