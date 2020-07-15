@@ -1,0 +1,13 @@
+im_cable=imread('cable_resized.tif'); 
+im_his(:,:,1)=adapthisteq(im_cable(:,:,1));
+im_his(:,:,2)=adapthisteq(im_cable(:,:,2));
+im_his(:,:,3)=adapthisteq(im_cable(:,:,3)); 
+imwrite(im_his, 'Original-CLAHE.tif')
+im_hisc(:,:,1)= adapthisteq(im_cable(:,:,1), 'ClipLimit',0.0100000005);
+im_hisc(:,:,2)= adapthisteq(im_cable(:,:,2), 'ClipLimit',0.0100000005);
+im_hisc(:,:,3)= adapthisteq(im_cable(:,:,3), 'ClipLimit',0.0100000005);
+imwrite(im_hisc,  'Modified-CLAHE.tif')
+multi= cat(4, im_cable, im_his, im_hisc);
+figure;
+montage(multi, 'size',[1,3]); 
+title('   Original                        Original-CLAHE                      Modified-CLAHE') 
