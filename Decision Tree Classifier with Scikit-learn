@@ -1,0 +1,44 @@
+import os
+os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
+
+from sklearn.datasets import load_iris
+from sklearn.tree import DecisionTreeClassifier
+
+iris=load_iris() # iris=sns.load_dataset('iris')과는 다르다 얘는 iris.head()하면 볼수있도록 dataframe형식임
+
+x=iris.data[:,2:]
+y=iris.target
+
+tree_clf =DecisionTreeClassifier(max_depth=2)
+tree_clf.fit(x,y)
+
+from sklearn.tree import export_graphviz
+import pydotplus
+from IPython.display import Image
+
+a=export_graphviz(tree_clf, out_file=None,
+               feature_names=iris.feature_names[2:],
+               class_names=iris.target_names,
+               rounded=True,
+               filled=True)
+
+
+graph = pydotplus.graph_from_dot_data(a)
+Image(graph.create_png())
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+iris1= sns.load_dataset('iris')
+iris1.head()
+
+groups=iris1.groupby('species')
+
+fig, ax = plt.subplots()
+for name, group in groups:
+    ax.plot(group.petal_length,  group.petal_width, marker='o',  linestyle='',label=name)
+ax.legend(fontsize=12, loc='upper left') # legend position
+plt.title('Scatter Plot of iris by matplotlib', fontsize=20)
+plt.xlabel('Petal Length', fontsize=14)
+plt.ylabel('Petal Width', fontsize=14)
+plt.show()
