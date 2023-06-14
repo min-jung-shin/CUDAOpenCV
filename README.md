@@ -1,2 +1,2 @@
-# ML-DL-project
+# CUDA Programming and OpenCV Project with C++
 
