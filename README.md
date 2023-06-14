@@ -1,2 +1,1 @@
-# CUDA Programming and OpenCV Project with C++
-
+# CUDAOpenCV-Project-with-C++
