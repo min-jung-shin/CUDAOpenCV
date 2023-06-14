@@ -1,1 +1,1 @@
-# CUDAOpenCV-Project-with-C++
+# CUDAOpenCV (with C++)
